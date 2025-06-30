@@ -13,7 +13,6 @@ HEADERS = {
     "Content-Type": "application/json"
 }
 
-
 def fetch_documents():
     print("📥 Получаем список документов из Outline...")
     response = httpx.post(
@@ -26,16 +25,21 @@ def fetch_documents():
     json_data = response.json()
     print("🔍 Ответ от API получен.")
 
-    # Гибкая проверка: если data — словарь, ищем в нем "documents"
-    if isinstance(json_data, dict) and "data" in json_data and "documents" in json_data["data"]:
-        return json_data["data"]["documents"]
+    # Если ответ — словарь с ключами data → documents
+    if isinstance(json_data, dict):
+        data = json_data.get("data")
+        if isinstance(data, dict) and "documents" in data:
+            return data["documents"]
+        elif isinstance(data, list):
+            return data
+        else:
+            raise ValueError("❌ Структура data не распознана")
 
-    # Иначе вернём всё как есть (возможно это уже список документов)
+    # Если сразу список — возвращаем как есть
     if isinstance(json_data, list):
         return json_data
 
     raise ValueError("❌ Неподдерживаемый формат ответа от Outline API")
-
 
 def fetch_content(doc_id: str):
     response = httpx.post(
@@ -45,7 +49,6 @@ def fetch_content(doc_id: str):
     )
     response.raise_for_status()
     return response.json()["data"]["text"]
-
 
 def save_documents():
     Path("docs").mkdir(parents=True, exist_ok=True)
@@ -63,7 +66,7 @@ def save_documents():
         except Exception as e:
             print(f"⚠️ Ошибка при загрузке {title}: {e}")
 
-
 if __name__ == "__main__":
     save_documents()
+
 
