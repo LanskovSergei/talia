@@ -1,0 +1,77 @@
+import os
+from fastapi import FastAPI, Query
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from llama_index import StorageContext, load_index_from_storage
+from openai import OpenAI
+from talia_assistant import generate_talia_response
+
+# === Устанавливаем ключ OpenAI ===
+os.environ["OPENAI_API_KEY"] = ""
+client = OpenAI()
+
+# === Загружаем индекс из сохранённой базы ===
+print("📦 Загружаем индекс из ./storage ...")
+storage_context = StorageContext.from_defaults(persist_dir="./storage")
+index = load_index_from_storage(storage_context)
+query_engine = index.as_query_engine()
+
+# === Инициализация FastAPI ===
+app = FastAPI()
+
+# === Разрешаем CORS для n8n, браузера и т.д. ===
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# === Обработчик GET /ask ===
+@app.get("/ask")
+def ask(query: str = Query(..., description="Вопрос пользователя")):
+    print(f"🧠 Запрос от пользователя: {query}")
+    base_response = query_engine.query(query)
+    raw_text = str(base_response)
+
+    gpt_response = client.chat.completions.create(
+        model="gpt-4",
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "Ты — ассистент по правилам общения.\n"
+                    "На основе текста из базы знаний определи, как правильно себя вести в этой ситуации.\n"
+                    "Дай подробную, но сжатую выжимку: 2–4 предложения, только суть.\n"
+                    "Не цитируй напрямую, не упоминай источники. Просто объясни поведение, тон общения и чего избегать."
+                )
+            },
+            {"role": "user", "content": raw_text}
+        ]
+    )
+
+    final_summary = gpt_response.choices[0].message.content.strip()
+    return {"answer": final_summary}
+
+# === Новый маршрут POST /talia (синхронный) ===
+class TaliaRequest(BaseModel):
+    content: str
+    thread_id: str
+    user_id: str
+    system_context: str
+
+@app.post("/talia")
+def ask_talia(data: TaliaRequest):
+    try:
+        print(f"🧠 TALIA: сообщение от {data.user_id} — {data.content}")
+        result = generate_talia_response(
+            content=data.content,
+            thread_id=data.thread_id,
+            user_id=data.user_id,
+            system_context=data.system_context
+        )
+        return result
+    except Exception as e:
+        return {"error": str(e)}
+
+
