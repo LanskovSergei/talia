@@ -1,0 +1,38 @@
+from openai import OpenAI
+import os
+
+os.environ["OPENAI_API_KEY"] = "sk-..."  # или используй .env
+
+client = OpenAI()
+
+def generate_talia_response(user_message: str, thread_id: str, user_id: str, system_context: str) -> dict:
+    messages = [
+        {
+            "role": "system",
+            "content": system_context,
+        },
+        {
+            "role": "user",
+            "content": user_message,
+        },
+    ]
+
+    response = client.beta.threads.messages.create(
+        thread_id=thread_id,
+        role="user",
+        content=user_message,
+        metadata={"system_context": system_context}
+    )
+
+    run = client.beta.threads.runs.create_and_poll(
+        thread_id=thread_id,
+        assistant_id=os.environ.get("OPENAI_ASSISTANT_ID"),
+    )
+
+    if run.status == "completed":
+        messages = client.beta.threads.messages.list(thread_id=thread_id)
+        final_response = messages.data[0].content[0].text.value
+    else:
+        final_response = "⚠️ Не удалось получить ответ от ассистента."
+
+    return {"answer": final_response, "user_id": user_id}
